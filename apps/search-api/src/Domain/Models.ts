@@ -10,6 +10,13 @@ export class SearchResult extends Schema.Class<SearchResult>("SearchResult")({
 
 export class SearchQuery extends Schema.Class<SearchQuery>("SearchQuery")({
     q: Schema.String,
-    page: Schema.Number,
     limit: Schema.Number,
+    cursor: Schema.optional(Schema.String),
+    language: Schema.optional(Schema.String),
+}) { }
+
+export class SearchResponse extends Schema.Class<SearchResponse>("SearchResponse")({
+    results: Schema.Array(SearchResult),
+    continueCursor: Schema.String,
+    isDone: Schema.Boolean,
 }) { }

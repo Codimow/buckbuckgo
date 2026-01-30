@@ -14,15 +14,19 @@ const router = HttpRouter.empty.pipe(
 
         const url = new URL(req.url, "http://localhost");
         const q = url.searchParams.get("q");
+        const cursor = url.searchParams.get("cursor") || undefined;
+        const lang = url.searchParams.get("lang") || undefined;
+        const limitStr = url.searchParams.get("limit") || "10";
+        const limit = parseInt(limitStr, 10);
 
         if (!q) {
             return yield* _(HttpServerResponse.json({ error: "Missing query 'q'" }, { status: 400 }));
         }
 
-        const searchQuery = new SearchQuery({ q, page: 1, limit: 10 });
-        const results = yield* _(searchService.search(searchQuery));
+        const searchQuery = new SearchQuery({ q, limit, cursor, language: lang });
+        const response = yield* _(searchService.search(searchQuery));
 
-        return yield* _(HttpServerResponse.json({ results }));
+        return yield* _(HttpServerResponse.json(response));
     })),
     HttpRouter.get("/health", Effect.succeed(HttpServerResponse.text("OK")))
 );

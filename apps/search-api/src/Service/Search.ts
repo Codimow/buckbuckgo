@@ -1,5 +1,5 @@
 import { Effect, Context } from "effect";
-import { SearchResult, SearchQuery } from "../Domain/Models.js";
+import { SearchResult, SearchQuery, SearchResponse } from "../Domain/Models.js";
 
 export class SearchError extends Context.Tag("SearchError")<
     SearchError,
@@ -9,7 +9,7 @@ export class SearchError extends Context.Tag("SearchError")<
 export interface SearchService {
     readonly search: (
         query: SearchQuery
-    ) => Effect.Effect<SearchResult[], Error>;
+    ) => Effect.Effect<SearchResponse, Error>;
 }
 
 export const SearchService = Context.GenericTag<SearchService>("SearchService");
