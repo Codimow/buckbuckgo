@@ -13,7 +13,7 @@ impl AppConfig {
         let builder = Config::builder()
             .add_source(File::with_name("config").required(false))
             .add_source(Environment::default())
-            .set_default("crawler_concurrency", 10)?
+            .set_default("crawler_concurrency", 50)?
             .set_default("user_agent", "BuckBuckGoBot/1.0 (+https://buckbuckgo.com/bot)")?;
 
         builder.build()?.try_deserialize()

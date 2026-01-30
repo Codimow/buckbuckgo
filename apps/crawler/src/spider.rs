@@ -3,19 +3,18 @@ use crate::fetcher::Fetcher;
 use crate::parser::Parser;
 use crate::storage::Storage;
 use crate::error::Result;
-use tracing::{info, error, warn};
-use std::collections::VecDeque;
+use tracing::{info, error, warn, debug};
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashSet;
+use tokio::sync::mpsc;
+use dashmap::DashMap;
+use std::time::Duration;
 
 pub struct Spider {
+    config: AppConfig,
     fetcher: Fetcher,
     parser: Parser,
     storage: Storage,
-    // Naive local state for MVP - replace with Redis/RabbitMQ later
-    queue: Arc<Mutex<VecDeque<String>>>,
-    visited: Arc<Mutex<HashSet<String>>>,
+    visited: Arc<DashMap<String, ()>>, // DashMap for concurrent access
 }
 
 impl Spider {
@@ -25,78 +24,123 @@ impl Spider {
         let storage = Storage::new(config).await?;
         
         Ok(Self {
+            config: config.clone(),
             fetcher,
             parser,
             storage,
-            queue: Arc::new(Mutex::new(VecDeque::new())),
-            visited: Arc::new(Mutex::new(HashSet::new())),
+            visited: Arc::new(DashMap::new()),
         })
     }
 
-    pub async fn seed(&self, urls: Vec<String>) {
-        let mut queue = self.queue.lock().await;
-        for url in urls {
-            queue.push_back(url);
-        }
-    }
+    pub async fn run(&self, seeds: Vec<String>) -> Result<()> {
+        info!("Spider started with concurrency: {}", self.config.crawler_concurrency);
 
-    pub async fn run(&self) -> Result<()> {
-        info!("Spider started.");
+        // Shared state for workers
+        let spider = Arc::new(self.clone());
+
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(self.config.crawler_concurrency));
+        let (res_tx, mut res_rx) = mpsc::channel::<Vec<String>>(1000); // Channel for new links found
+
+        // Initial tasks
+        let mut active_tasks = 0;
         
-        // MVP: Single consumer loop. 
-        // Real implementation: Worker pool consuming from queue.
-        loop {
-            let url_opt = {
-                let mut queue = self.queue.lock().await;
-                queue.pop_front()
-            };
-
-            if let Some(url) = url_opt {
-                // Check visited
-                {
-                    let mut visited = self.visited.lock().await;
-                    if visited.contains(&url) {
-                        continue;
-                    }
-                    visited.insert(url.clone());
-                }
-
-                self.process_url(&url).await?;
-                
-                // Be polite
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            } else {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                // Break or continue polling?
-                // break; 
-            }
+        let mut pending_queue = std::collections::VecDeque::from(seeds.clone()); 
+        
+        // Mark seeds as visited
+        for seed in &seeds {
+            spider.visited.insert(seed.clone(), ());
         }
-    }
 
-    async fn process_url(&self, url: &str) -> Result<()> {
-        info!("Processing: {}", url);
+        loop {
+            // Drain results
+            while let Ok(new_links) = res_rx.try_recv() {
+                active_tasks -= 1;
+                for link in new_links {
+                    if !spider.visited.contains_key(&link) {
+                        spider.visited.insert(link.clone(), ());
+                        pending_queue.push_back(link);
+                    }
+                }
+            }
+
+            // check if done
+            if active_tasks == 0 && pending_queue.is_empty() {
+                info!("Crawl finished!");
+                break;
+            }
+
+            // Spawn tasks if capacity
+            while active_tasks < self.config.crawler_concurrency && !pending_queue.is_empty() {
+                if let Some(url) = pending_queue.pop_front() {
+                    let permit = semaphore.clone().acquire_owned().await.unwrap();
+                    let spider_worker = spider.clone();
+                    let res_tx_worker = res_tx.clone();
+                    
+                    active_tasks += 1;
+                    
+                    tokio::spawn(async move {
+                        let _permit = permit; // Hold permit
+                        let result = spider_worker.process_url(&url).await;
+                        // Send back links (or empty) to signal completion
+                        match result {
+                            Ok(links) => {
+                                let _ = res_tx_worker.send(links).await;
+                            }
+                            Err(e) => {
+                                error!("Task failed for {}: {}", url, e);
+                                let _ = res_tx_worker.send(vec![]).await;
+                            }
+                        }
+                    });
+                }
+            }
+            
+            // Sleep briefly to prevent tight loop if waiting
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        Ok(())
+    }
+    
+    // Make context cloneable is expensive if structs are big.
+    // Fetcher/Storage are cheap clones (Arc inside).
+    
+    async fn process_url(&self, url: &str) -> Result<Vec<String>> {
+        debug!("Fetching: {}", url);
         match self.fetcher.fetch(url).await {
             Ok((status, body)) => {
                 if status.is_success() {
                     let parsed = self.parser.parse(&body, url)?;
+                    // info!("Found: {} ({})", parsed.title, url);
                     
-                    info!("Parsed title: {}", parsed.title);
-                    
+                    // Async Save (Fire and Forget or Await?)
+                    // Await to ensure data safety
                     self.storage.save_document(url, &parsed.title, &parsed.text_content).await?;
                     
-                    // Add new links to queue
-                    let mut queue = self.queue.lock().await;
-                    for link in parsed.links {
-                        queue.push_back(link);
-                    }
+                    Ok(parsed.links)
                 } else {
-                    warn!("Failed to fetch {}: Status {}", url, status);
+                    warn!("HTTP {}: {}", status, url);
+                    Ok(vec![])
                 }
             }
             Err(e) => {
-                error!("Error processing {}: {}", url, e);
+                // Don't error out the worker too hard, just log
+                warn!("Fetch error {}: {}", url, e);
+                Ok(vec![])
             }
         }
-        Ok(())
+    }
+}
+
+// Implement Clone manually or derive if fields support it
+impl Clone for Spider {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            fetcher: self.fetcher.clone(),
+            parser: self.parser.clone(),
+            storage: self.storage.clone(),
+            visited: self.visited.clone(),
+        }
     }
 }

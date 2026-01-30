@@ -33,13 +33,46 @@ async fn main() -> anyhow::Result<()> {
 
     // Seed initial URLs (for testing MVP)
     let seeds = vec![
+        // News & Media
         "https://www.nepal.gov.np".to_string(),
         "https://kathmandupost.com".to_string(),
+        "https://ekantipur.com".to_string(),
+        "https://thehimalayantimes.com".to_string(),
+        "https://myrepublica.nagariknetwork.com".to_string(),
+        "https://onlinekhabar.com".to_string(),
+        "https://ratopati.com".to_string(),
+        "https://setopati.com".to_string(),
+        "https://nepalitimes.com".to_string(),
+        "https://www.bbcnepali.com".to_string(),
+        
+        // Government & Institutions
+        "https://mofa.gov.np".to_string(),
+        "https://mof.gov.np".to_string(),
+        "https://psc.gov.np".to_string(),
+        "https://www.tu.edu.np".to_string(),
+        "https://ku.edu.np".to_string(),
+        
+        // Tech & Business
+        "https://techpana.com".to_string(),
+        "https://www.sharesansar.com".to_string(),
+        "https://merolagani.com".to_string(),
+        "https://www.gadgetbytenepal.com".to_string(),
+        "https://ictframe.com".to_string(),
+        
+        // Tourism & Culture
+        "https://ntb.gov.np".to_string(),
+        "https://www.welcomenepal.com".to_string(),
+        "https://ecs.com.np".to_string(),
+        
+        // Jobs & Others
+        "https://merojob.com".to_string(),
+        "https://jobsnepal.com".to_string(),
+        "https://hamrobazaar.com".to_string(),
+        "https://daraz.com.np".to_string(),
+        "https://sastodeal.com".to_string(),
     ];
-    spider.seed(seeds).await;
-
-    // Run the spider
-    match spider.run().await {
+    // Run the spider with seeds
+    match spider.run(seeds).await {
         Ok(_) => info!("Spider finished successfully."),
         Err(e) => error!("Spider failed: {}", e),
     }

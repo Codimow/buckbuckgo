@@ -1,0 +1,2 @@
+crawler_concurrency = 100
+user_agent = "BuckBuckGoBot/1.0 (+https://buckbuckgo.com/bot)"
