@@ -1,4 +1,30 @@
-/node_modules
-/target
+# Monorepo Global Ignores
+node_modules/
+**/node_modules/
+.turbo/
+.pnpm-debug.log*
 
-.env.local
+# Environment
+.env*
+!.env.example
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+**/dist/
+target/
+**/target/
+build/
+**/build/
+
+# Convex
+convex/_generated/

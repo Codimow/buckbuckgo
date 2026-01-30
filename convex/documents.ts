@@ -1,13 +1,18 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { processNepaliText } from "./nlp.js";
 
 export const saveDocument = mutation({
     args: {
         url: v.string(),
         title: v.string(),
         contentText: v.string(),
+        language: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        const searchableText = processNepaliText(args.contentText);
+        const crawledAt = new Date().toISOString();
+
         // Upsert logic
         const existing = await ctx.db
             .query("documents")
@@ -18,7 +23,9 @@ export const saveDocument = mutation({
             await ctx.db.patch(existing._id, {
                 title: args.title,
                 contentText: args.contentText,
-                crawledAt: new Date().toISOString(),
+                searchableText,
+                crawledAt,
+                language: args.language,
             });
             return existing._id;
         } else {
@@ -26,7 +33,9 @@ export const saveDocument = mutation({
                 url: args.url,
                 title: args.title,
                 contentText: args.contentText,
-                crawledAt: new Date().toISOString(),
+                searchableText,
+                crawledAt,
+                language: args.language,
             });
             return id;
         }
@@ -43,11 +52,9 @@ export const search = query({
         let q = ctx.db
             .query("documents")
             .withSearchIndex("search_content", (q) =>
-                q.search("contentText", args.q)
+                q.search("searchableText", args.q)
             );
 
-        // Note: Filter fields must be defined in the search index in schema.ts
-        // Schema.ts already has language in filterFields for search_content
         if (args.language) {
             q = q.filter((f) => f.eq("language", args.language));
         }

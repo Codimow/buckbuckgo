@@ -10,6 +10,7 @@
         "test": "vitest"
     },
     "dependencies": {
+        "@bsearch/nlp": "workspace:*",
         "@effect/platform": "latest",
         "@effect/platform-node": "latest",
         "@effect/schema": "latest",

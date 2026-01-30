@@ -3,9 +3,12 @@ import { SearchService } from "../Service/Search.js";
 import { SearchResult, SearchQuery, SearchResponse } from "../Domain/Models.js";
 import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
+import { processNepaliText } from "@bsearch/nlp";
 
 // Helper to generate a basic snippet with highlighting
 const generateHighlight = (content: string, query: string): string => {
+    // We use the original query for highlighting to ensure visual matches 
+    // even if the backend uses processed text.
     const term = query.toLowerCase();
     const index = content.toLowerCase().indexOf(term);
     if (index === -1) return content.substring(0, 200) + "...";
@@ -30,9 +33,14 @@ const make = Effect.succeed({
     search: (query: SearchQuery) =>
         Effect.tryPromise({
             try: async () => {
+                // Enrich query with NLP (Normalization, Stemming, Stopword removal)
+                const processedQuery = processNepaliText(query.q);
+                // If NLP results in empty string (e.g. only stopwords), fallback to original
+                const searchQuery = processedQuery || query.q;
+
                 // Query the "search" function in convex/documents.ts
                 const results = await client.query(anyApi.documents.search, {
-                    q: query.q,
+                    q: searchQuery,
                     paginationOpts: {
                         numItems: query.limit,
                         cursor: query.cursor ?? null

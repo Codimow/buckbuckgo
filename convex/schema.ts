@@ -6,6 +6,7 @@ export default defineSchema({
         url: v.string(),
         title: v.string(),
         contentText: v.string(),
+        searchableText: v.string(), // Normalized and stemmed
         crawledAt: v.string(), // ISO String
         language: v.optional(v.string()),
     })
@@ -15,7 +16,7 @@ export default defineSchema({
             filterFields: ["language"],
         })
         .searchIndex("search_content", {
-            searchField: "contentText",
+            searchField: "searchableText",
             filterFields: ["language"],
         }),
     // .vectorIndex("by_embedding", {
