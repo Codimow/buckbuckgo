@@ -1,0 +1,26 @@
+[package]
+name = "crawler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.36", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "http2"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+scraper = "0.19.0"
+url = "2.5"
+sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+thiserror = "1.0"
+lapin = "2.3" # For RabbitMQ
+ulid = "1.1" # Sortable IDs
+chrono = { version = "0.4", features = ["serde"] }
+tokio-stream = "0.1"
+futures = "0.3"
+config = "0.14"
+
+[dev-dependencies]
+tokio-test = "0.4"
