@@ -1,17 +1,23 @@
 import { Config, ConfigProvider } from "effect";
 
 export const DatabaseConfig = Config.all({
-  url: Config.string("DATABASE_URL").pipe(
-    Config.withDefault(
-      "postgres://buckbuckgo:postgres@localhost:5432/buckbuckgo",
+    url: Config.string("DATABASE_URL").pipe(
+        Config.withDefault(
+            "postgres://buckbuckgo:postgres@localhost:5432/buckbuckgo",
+        ),
     ),
-  ),
-  maxConnections: Config.number("DB_MAX_CONNECTIONS").pipe(
-    Config.withDefault(20),
-  ),
+    maxConnections: Config.number("DB_MAX_CONNECTIONS").pipe(
+        Config.withDefault(20),
+    ),
 });
 
 export const ServerConfig = Config.all({
-  port: Config.number("PORT").pipe(Config.withDefault(4000)),
-  nodeEnv: Config.string("NODE_ENV").pipe(Config.withDefault("development")),
+    port: Config.number("PORT").pipe(Config.withDefault(4000)),
+    nodeEnv: Config.string("NODE_ENV").pipe(Config.withDefault("development")),
+});
+
+export const RedisConfig = Config.all({
+    url: Config.string("REDIS_URL").pipe(
+        Config.withDefault("redis://localhost:6379"),
+    ),
 });

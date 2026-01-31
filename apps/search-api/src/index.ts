@@ -9,6 +9,8 @@ import { SearchServiceLive } from "./Infrastructure/SearchLive.js";
 import { DatabaseClientLive } from "./Infrastructure/Database.js";
 import { SearchQuery } from "./Domain/Models.js";
 import { DatabaseClient } from "./Infrastructure/Database.js";
+import { RedisServiceLive } from "./Infrastructure/RedisLive.js";
+import { CacheServiceLive } from "./Infrastructure/CacheLive.js";
 
 /**
  * Metrics
@@ -76,9 +78,35 @@ const router = HttpRouter.empty.pipe(
 );
 
 /**
+ * Rate Limit Middleware
+ */
+import { RateLimiterService } from "./Service/RateLimiter.js";
+import { RateLimiterServiceLive } from "./Infrastructure/RateLimiterLive.js";
+
+const RateLimitMiddleware = HttpMiddleware.make((httpApp) =>
+    Effect.gen(function* () {
+        const req = yield* HttpServerRequest.HttpServerRequest;
+        const rateLimiter = yield* RateLimiterService;
+
+        const ip = req.headers["x-forwarded-for"] || "unknown";
+        const key = typeof ip === 'string' ? ip : ip[0];
+
+        // Limit: 100 requests per 60 seconds
+        const allowed = yield* rateLimiter.allowable(key, 100, 60);
+
+        if (!allowed) {
+            return HttpServerResponse.json({ error: "Too Many Requests" }, { status: 429 });
+        }
+
+        return yield* httpApp;
+    })
+);
+
+/**
  * Apply middleware
  */
 const app = router.pipe(
+    RateLimitMiddleware,
     RequestIdMiddleware,
     HttpMiddleware.logger,
     HttpMiddleware.cors({
@@ -102,6 +130,9 @@ const ServerLive = NodeHttpServer.layer(createServer, { port: 4000 });
 const MainLayer = HttpServer.serve(app).pipe(
     Layer.provide(SearchServiceLive),
     Layer.provide(DatabaseClientLive),
+    Layer.provide(CacheServiceLive), // Cache depends on Redis
+    Layer.provide(RateLimiterServiceLive), // RateLimiter depends on Redis
+    Layer.provide(RedisServiceLive), // Redis infra
     Layer.provide(ServerLive),
     Layer.provide(NodeContext.layer)
 );
@@ -109,4 +140,7 @@ const MainLayer = HttpServer.serve(app).pipe(
 /**
  * Run the application
  */
-Layer.launch(MainLayer).pipe(NodeRuntime.runMain);
+Layer.launch(MainLayer).pipe(
+    Effect.scoped,
+    NodeRuntime.runMain
+);
