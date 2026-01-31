@@ -5,3 +5,4 @@ pub mod parser;
 pub mod spider;
 pub mod storage;
 pub mod stemmer;
+pub mod politeness;

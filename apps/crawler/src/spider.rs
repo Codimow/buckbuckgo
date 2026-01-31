@@ -9,12 +9,16 @@ use tokio::sync::mpsc;
 use dashmap::DashMap;
 use std::time::Duration;
 
+use crate::politeness::PolitenessManager;
+use fred::prelude::*;
+
 pub struct Spider {
     config: AppConfig,
     fetcher: Fetcher,
     parser: Parser,
     storage: Storage,
-    visited: Arc<DashMap<String, ()>>,
+    politeness: Arc<PolitenessManager>,
+    redis: Client,
     shutdown: tokio::sync::broadcast::Sender<()>,
 }
 
@@ -23,6 +27,14 @@ impl Spider {
         let fetcher = Fetcher::new(config)?;
         let parser = Parser::new();
         let storage = Storage::new(&config.database_url).await?;
+        let politeness = Arc::new(PolitenessManager::new(fetcher.clone(), config.user_agent.clone(), config.rate_limit_per_domain));
+        
+        // fred v10 configuration
+        let redis_config = Config::from_url(&config.redis_url).map_err(|e| crate::error::CrawlerError::Config(e.to_string()))?;
+        let redis = Client::new(redis_config, None, None, None);
+        let _ = redis.connect();
+        let _ = redis.wait_for_connect().await.map_err(|e: Error| crate::error::CrawlerError::Config(e.to_string()))?;
+        
         let (shutdown, _) = tokio::sync::broadcast::channel(1);
         
         Ok(Self {
@@ -30,7 +42,8 @@ impl Spider {
             fetcher,
             parser,
             storage,
-            visited: Arc::new(DashMap::new()),
+            politeness,
+            redis,
             shutdown,
         })
     }
@@ -71,10 +84,23 @@ impl Spider {
                     while let Ok(new_links) = res_rx.try_recv() {
                         active_tasks -= 1;
                         for link in new_links {
-                            if !spider.visited.contains_key(&link) {
-                                spider.visited.insert(link.clone(), ());
-                                pending_queue.push_back(link);
-                            }
+                            let redis = spider.redis.clone();
+                            let link_clone = link.clone();
+                            let res_tx_worker = res_tx.clone();
+                            
+                            // Check Redis if visited
+                            tokio::spawn(async move {
+                                let key = format!("visited:{}", link_clone);
+                                // fred v10: redis.exists() is an async method returning R: FromRedis
+                                match redis.exists::<i64, _>(key).await {
+                                    Ok(count) if count == 0 => {
+                                        // Not visited, mark as visited and send back to queue
+                                        let _ = redis.set::<(), _, _>(format!("visited:{}", link_clone), "1", None, None, false).await;
+                                        let _ = res_tx_worker.send(vec![link_clone]).await; // Send back as "new links to crawl"
+                                    }
+                                    _ => {} // Either error or already visited
+                                }
+                            });
                         }
                     }
 
@@ -120,15 +146,18 @@ impl Spider {
     // Fetcher/Storage are cheap clones (Arc inside).
     
     async fn process_url(&self, url: &str) -> Result<Vec<String>> {
+        // Politeness check
+        if !self.politeness.check_and_wait(url).await {
+            debug!("Skipping disallowed or failed politeness check: {}", url);
+            return Ok(vec![]);
+        }
+
         debug!("Fetching: {}", url);
         match self.fetcher.fetch(url).await {
             Ok((status, body)) => {
                 if status.is_success() {
                     let parsed = self.parser.parse(&body, url)?;
-                    // info!("Found: {} ({})", parsed.title, url);
                     
-                    // Async Save (Fire and Forget or Await?)
-                    // Await to ensure data safety
                     self.storage.insert_document(url, &parsed.title, &parsed.text_content, None).await?;
                     
                     Ok(parsed.links)
@@ -138,7 +167,6 @@ impl Spider {
                 }
             }
             Err(e) => {
-                // Don't error out the worker too hard, just log
                 warn!("Fetch error {}: {}", url, e);
                 Ok(vec![])
             }
@@ -154,7 +182,8 @@ impl Clone for Spider {
             fetcher: self.fetcher.clone(),
             parser: self.parser.clone(),
             storage: self.storage.clone(),
-            visited: self.visited.clone(),
+            politeness: self.politeness.clone(),
+            redis: self.redis.clone(),
             shutdown: self.shutdown.clone(),
         }
     }

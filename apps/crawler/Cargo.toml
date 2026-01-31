@@ -25,6 +25,8 @@ dotenv = "0.15.0"
 governor = "0.10.4"
 key-lock = "0.1.0"
 dashmap = "6.1.0"
+robots_txt = "0.7.0"
+fred = { version = "10.1.0", features = ["serde-json"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
