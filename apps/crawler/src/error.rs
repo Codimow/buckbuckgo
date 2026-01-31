@@ -20,6 +20,9 @@ pub enum CrawlerError {
     #[error("Queue error: {0}")]
     Queue(#[from] lapin::Error),
     
+    #[error("Redis error: {0}")]
+    Redis(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }

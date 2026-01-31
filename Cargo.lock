@@ -382,6 +382,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bstr"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba3569f383e8f1598449f1a423e72e99569137b47740b1da11ef19af3d5c3223"
+dependencies = [
+ "lazy_static",
+ "memchr",
+ "regex-automata 0.1.10",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -590,6 +601,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "texting_robots",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
@@ -1809,7 +1821,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
- "regex-automata",
+ "regex-automata 0.4.13",
 ]
 
 [[package]]
@@ -2561,6 +2573,24 @@ checksum = "49f3fe0889e69e2ae9e41f4d6c4c0181701d00e4697b356fb1f74173a5e0ee27"
 dependencies = [
  "bitflags 2.10.0",
 ]
+
+[[package]]
+name = "regex"
+version = "1.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "843bc0191f75f3e22651ae5f1e72939ab2f72a4bc30fa80a066bd66edefc24d4"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata 0.4.13",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
 
 [[package]]
 name = "regex-automata"
@@ -3501,6 +3531,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "texting_robots"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b82a718a28dda2e67ad6e0464597b58eae39e2e4d0451e03d1028d71e81bb4a"
+dependencies = [
+ "anyhow",
+ "bstr",
+ "lazy_static",
+ "nom",
+ "percent-encoding",
+ "regex",
+ "thiserror 1.0.69",
+ "url",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3826,7 +3872,7 @@ dependencies = [
  "matchers",
  "nu-ansi-term",
  "once_cell",
- "regex-automata",
+ "regex-automata 0.4.13",
  "sharded-slab",
  "smallvec",
  "thread_local",

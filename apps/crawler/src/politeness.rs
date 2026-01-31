@@ -1,5 +1,5 @@
 use crate::fetcher::Fetcher;
-use robots_txt::Robots;
+use texting_robots::Robot;
 use dashmap::DashMap;
 use std::sync::Arc;
 use url::Url;
@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 
 pub struct RobotsManager {
     fetcher: Fetcher,
-    cache: DashMap<String, String>,
+    cache: DashMap<String, Arc<Robot>>,
     user_agent: String,
 }
 
@@ -33,24 +33,34 @@ impl RobotsManager {
             None => return false,
         };
 
-        let robots_text = if let Some(r) = self.cache.get(domain) {
+        let robot = if let Some(r) = self.cache.get(domain) {
             r.clone()
         } else {
             let robots_url = format!("{}://{}/robots.txt", url.scheme(), domain);
             match self.fetcher.fetch(&robots_url).await {
                 Ok((_, body)) => {
-                    self.cache.insert(domain.to_string(), body.clone());
-                    body
+                    match Robot::new(&self.user_agent, body.as_bytes()) {
+                        Ok(r) => {
+                            let arc_r = Arc::new(r);
+                            self.cache.insert(domain.to_string(), arc_r.clone());
+                            arc_r
+                        }
+                        Err(e) => {
+                            debug!("Failed to parse robots.txt for {}: {}", domain, e);
+                            return true;
+                        }
+                    }
                 }
                 Err(e) => {
                     debug!("No robots.txt found for {}: {}", domain, e);
-                    return true; 
+                    // Default allowance if robots.txt is missing
+                    return true;
                 }
             }
         };
 
-        let robots = Robots::from_str_lossy(&robots_text);
-        robots.allowed(url.as_str(), &self.user_agent)
+        // texting_robots::Robot::allowed(path)
+        robot.allowed(url.path())
     }
 }
 
