@@ -20,5 +20,14 @@
   "packageManager": "pnpm@10.25.0",
   "engines": {
     "node": ">=18"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "@parcel/watcher",
+      "esbuild",
+      "msgpackr-extract",
+      "protobufjs"
+    ]
   }
 }

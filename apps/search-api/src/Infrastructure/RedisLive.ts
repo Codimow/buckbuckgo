@@ -6,12 +6,12 @@ import { RedisConfig } from "../Config/index.js";
 export const RedisServiceLive = Layer.effect(
     RedisService,
     Effect.gen(function* () {
-        const config = yield* RedisConfig;
+        const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
         // We can acquire/release if we want managed resources, or just global client
         // For Effect best practices, we should use acquireRelease
         const client = yield* Effect.acquireRelease(
-            Effect.sync(() => new Redis(config.url)),
+            Effect.sync(() => new Redis(redisUrl)),
             (redis) => Effect.promise(() => redis.quit())
         );
 

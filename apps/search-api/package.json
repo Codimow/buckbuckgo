@@ -16,11 +16,13 @@
     "@effect/schema": "latest",
     "@types/ioredis": "^5.0.0",
     "@types/pg": "^8.16.0",
+    "@xenova/transformers": "^2.17.2",
     "convex": "^1.31.7",
     "dotenv": "^17.2.3",
     "effect": "latest",
     "ioredis": "^5.9.2",
-    "pg": "^8.17.2"
+    "pg": "^8.17.2",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

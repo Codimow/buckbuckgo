@@ -11,6 +11,7 @@ import { SearchQuery } from "./Domain/Models.js";
 import { DatabaseClient } from "./Infrastructure/Database.js";
 import { RedisServiceLive } from "./Infrastructure/RedisLive.js";
 import { CacheServiceLive } from "./Infrastructure/CacheLive.js";
+import { EmbeddingServiceLive } from "./Infrastructure/EmbeddingLive.js";
 
 /**
  * Metrics
@@ -127,12 +128,12 @@ const ServerLive = NodeHttpServer.layer(createServer, { port: 4000 });
  * Combined application layer
  * HttpServer.serve(app) returns a Layer that starts the server
  */
-const MainLayer = HttpServer.serve(app).pipe(
-    Layer.provide(SearchServiceLive),
+Layer.provide(SearchServiceLive),
     Layer.provide(DatabaseClientLive),
-    Layer.provide(CacheServiceLive), // Cache depends on Redis
-    Layer.provide(RateLimiterServiceLive), // RateLimiter depends on Redis
-    Layer.provide(RedisServiceLive), // Redis infra
+    Layer.provide(CacheServiceLive),
+    Layer.provide(RateLimiterServiceLive),
+    Layer.provide(RedisServiceLive),
+    Layer.provide(EmbeddingServiceLive),
     Layer.provide(ServerLive),
     Layer.provide(NodeContext.layer)
 );
