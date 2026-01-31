@@ -1,29 +1,29 @@
 {
-    "name": "search-api",
-    "version": "0.1.0",
-    "private": true,
-    "scripts": {
-        "dev": "tsx watch src/index.ts",
-        "build": "tsc",
-        "start": "node dist/index.js",
-        "lint": "eslint src/**",
-        "test": "vitest"
-    },
-    "dependencies": {
-        "@bsearch/nlp": "workspace:*",
-        "@effect/platform": "latest",
-        "@effect/platform-node": "latest",
-        "@effect/schema": "latest",
-        "@types/pg": "^8.11.0",
-        "convex": "^1.31.7",
-        "dotenv": "^17.2.3",
-        "effect": "latest",
-        "pg": "^8.11.0"
-    },
-    "devDependencies": {
-        "@types/node": "^20.0.0",
-        "tsx": "^4.7.0",
-        "typescript": "^5.3.0",
-        "vitest": "^1.0.0"
-    }
+  "name": "search-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/**",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@bsearch/nlp": "workspace:*",
+    "@effect/platform": "latest",
+    "@effect/platform-node": "latest",
+    "@effect/schema": "latest",
+    "@types/pg": "^8.16.0",
+    "convex": "^1.31.7",
+    "dotenv": "^17.2.3",
+    "effect": "latest",
+    "pg": "^8.17.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  }
 }

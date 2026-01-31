@@ -14,14 +14,16 @@ pub struct Spider {
     fetcher: Fetcher,
     parser: Parser,
     storage: Storage,
-    visited: Arc<DashMap<String, ()>>, // DashMap for concurrent access
+    visited: Arc<DashMap<String, ()>>,
+    shutdown: tokio::sync::broadcast::Sender<()>,
 }
 
 impl Spider {
     pub async fn new(config: &AppConfig) -> Result<Self> {
         let fetcher = Fetcher::new(config)?;
         let parser = Parser::new();
-        let storage = Storage::new(config).await?;
+        let storage = Storage::new(&config.database_url).await?;
+        let (shutdown, _) = tokio::sync::broadcast::channel(1);
         
         Ok(Self {
             config: config.clone(),
@@ -29,7 +31,12 @@ impl Spider {
             parser,
             storage,
             visited: Arc::new(DashMap::new()),
+            shutdown,
         })
+    }
+
+    pub fn shutdown(&self) {
+        let _ = self.shutdown.send(());
     }
 
     pub async fn run(&self, seeds: Vec<String>) -> Result<()> {
@@ -51,52 +58,59 @@ impl Spider {
             spider.visited.insert(seed.clone(), ());
         }
 
+        let mut shutdown_rx = spider.shutdown.subscribe();
+
         loop {
-            // Drain results
-            while let Ok(new_links) = res_rx.try_recv() {
-                active_tasks -= 1;
-                for link in new_links {
-                    if !spider.visited.contains_key(&link) {
-                        spider.visited.insert(link.clone(), ());
-                        pending_queue.push_back(link);
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    info!("Shutdown signal received, draining tasks...");
+                    break;
+                }
+                _ = tokio::time::sleep(Duration::from_millis(10)) => {
+                    // Drain results
+                    while let Ok(new_links) = res_rx.try_recv() {
+                        active_tasks -= 1;
+                        for link in new_links {
+                            if !spider.visited.contains_key(&link) {
+                                spider.visited.insert(link.clone(), ());
+                                pending_queue.push_back(link);
+                            }
+                        }
+                    }
+
+                    // check if done
+                    if active_tasks == 0 && pending_queue.is_empty() {
+                        info!("Crawl finished!");
+                        return Ok(());
+                    }
+
+                    // Spawn tasks if capacity
+                    while active_tasks < self.config.crawler_concurrency && !pending_queue.is_empty() {
+                        if let Some(url) = pending_queue.pop_front() {
+                            let permit = semaphore.clone().acquire_owned().await.unwrap();
+                            let spider_worker = spider.clone();
+                            let res_tx_worker = res_tx.clone();
+                            
+                            active_tasks += 1;
+                            
+                            tokio::spawn(async move {
+                                let _permit = permit; // Hold permit
+                                let result = spider_worker.process_url(&url).await;
+                                // Send back links (or empty) to signal completion
+                                match result {
+                                    Ok(links) => {
+                                        let _ = res_tx_worker.send(links).await;
+                                    }
+                                    Err(e) => {
+                                        error!("Task failed for {}: {}", url, e);
+                                        let _ = res_tx_worker.send(vec![]).await;
+                                    }
+                                }
+                            });
+                        }
                     }
                 }
             }
-
-            // check if done
-            if active_tasks == 0 && pending_queue.is_empty() {
-                info!("Crawl finished!");
-                break;
-            }
-
-            // Spawn tasks if capacity
-            while active_tasks < self.config.crawler_concurrency && !pending_queue.is_empty() {
-                if let Some(url) = pending_queue.pop_front() {
-                    let permit = semaphore.clone().acquire_owned().await.unwrap();
-                    let spider_worker = spider.clone();
-                    let res_tx_worker = res_tx.clone();
-                    
-                    active_tasks += 1;
-                    
-                    tokio::spawn(async move {
-                        let _permit = permit; // Hold permit
-                        let result = spider_worker.process_url(&url).await;
-                        // Send back links (or empty) to signal completion
-                        match result {
-                            Ok(links) => {
-                                let _ = res_tx_worker.send(links).await;
-                            }
-                            Err(e) => {
-                                error!("Task failed for {}: {}", url, e);
-                                let _ = res_tx_worker.send(vec![]).await;
-                            }
-                        }
-                    });
-                }
-            }
-            
-            // Sleep briefly to prevent tight loop if waiting
-            tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
         Ok(())
@@ -115,7 +129,7 @@ impl Spider {
                     
                     // Async Save (Fire and Forget or Await?)
                     // Await to ensure data safety
-                    self.storage.save_document(url, &parsed.title, &parsed.text_content).await?;
+                    self.storage.insert_document(url, &parsed.title, &parsed.text_content, None).await?;
                     
                     Ok(parsed.links)
                 } else {
@@ -141,6 +155,7 @@ impl Clone for Spider {
             parser: self.parser.clone(),
             storage: self.storage.clone(),
             visited: self.visited.clone(),
+            shutdown: self.shutdown.clone(),
         }
     }
 }

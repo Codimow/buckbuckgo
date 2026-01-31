@@ -1,52 +1,60 @@
-use crate::config::AppConfig;
-use crate::error::Result;
-use reqwest::Client;
-use serde_json::json;
-use tracing::{info, error};
+use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::Error;
+use crate::stemmer::NepaliNlp;
 
 #[derive(Clone)]
 pub struct Storage {
-    client: Client,
-    convex_url: String,
+    pool: PgPool,
 }
 
 impl Storage {
-    // No async needed for constructor really, but fine.
-    pub async fn new(config: &AppConfig) -> Result<Self> {
-        let client = Client::new();
-        Ok(Self { 
-            client,
-            convex_url: config.convex_url.clone(),
-        })
+    pub async fn new(database_url: &str) -> Result<Self, Error> {
+        let pool = PgPoolOptions::new()
+            .max_connections(50)
+            .connect(database_url)
+            .await?;
+            
+        Ok(Self { pool })
     }
 
-    pub async fn save_document(&self, url: &str, title: &str, content: &str) -> Result<()> {
-        let mutation_url = format!("{}/api/mutation", self.convex_url);
+    pub async fn insert_document(&self, url: &str, title: &str, content: &str, language: Option<&str>) -> Result<(), Error> {
+        let searchable_text = NepaliNlp::process_text(content);
         
-        let payload = json!({
-            "path": "documents:saveDocument",
-            "args": {
-                "url": url,
-                "title": title,
-                "contentText": content
-            },
-            "format": "json"
-        });
-
-        info!("Saving document to Convex: {}", url);
-
-        let resp = self.client.post(&mutation_url)
-            .json(&payload)
-            // .header("Authorization", "Bearer ...") // If needed
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let error_text = resp.text().await?;
-            error!("Failed to save document to Convex: {}", error_text);
-            return Err(crate::error::CrawlerError::Unknown(format!("Convex Error: {}", error_text)));
-        }
+        // Upsert based on URL
+        // Using sqlx::query instead of sqlx::query! to avoid build-time DB requirement
+        sqlx::query(
+            r#"
+            INSERT INTO documents (url, title, content_text, searchable_text, language)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (url) 
+            DO UPDATE SET 
+                title = EXCLUDED.title,
+                content_text = EXCLUDED.content_text,
+                searchable_text = EXCLUDED.searchable_text,
+                language = EXCLUDED.language,
+                crawled_at = NOW()
+            "#,
+        )
+        .bind(url)
+        .bind(title)
+        .bind(content)
+        .bind(searchable_text)
+        .bind(language)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
+    }
+    
+    // Check if URL exists (frontier optimization)
+    pub async fn url_exists(&self, url: &str) -> Result<bool, Error> {
+        let row = sqlx::query(
+            "SELECT 1 FROM documents WHERE url = $1 LIMIT 1"
+        )
+        .bind(url)
+        .fetch_optional(&self.pool)
+        .await?;
+        
+        Ok(row.is_some())
     }
 }

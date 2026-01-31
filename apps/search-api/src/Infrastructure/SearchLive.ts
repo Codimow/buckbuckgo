@@ -1,67 +1,73 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Context } from "effect";
 import { SearchService } from "../Service/Search.js";
 import { SearchResult, SearchQuery, SearchResponse } from "../Domain/Models.js";
-import { ConvexHttpClient } from "convex/browser";
-import { anyApi } from "convex/server";
+import { DatabaseClient } from "./Database.js";
 import { processNepaliText } from "@bsearch/nlp";
 
-// Helper to generate a basic snippet with highlighting
-const generateHighlight = (content: string, query: string): string => {
-    // We use the original query for highlighting to ensure visual matches 
-    // even if the backend uses processed text.
-    const term = query.toLowerCase();
-    const index = content.toLowerCase().indexOf(term);
-    if (index === -1) return content.substring(0, 200) + "...";
+export const SearchServiceLive = Layer.effect(
+  SearchService,
+  Effect.gen(function* () {
+    const db = yield* DatabaseClient;
 
-    const start = Math.max(0, index - 100);
-    const end = Math.min(content.length, index + 100);
-    let snippet = content.substring(start, end);
+    const generateHighlight = (content: string, query: string): string => {
+      const term = query.toLowerCase();
+      const index = content.toLowerCase().indexOf(term);
+      if (index === -1) return content.substring(0, 200) + "...";
 
-    // Basic highlight with markdown-like formatting or bold
-    const regex = new RegExp(`(${query})`, "gi");
-    snippet = snippet.replace(regex, "**$1**");
+      const start = Math.max(0, index - 100);
+      const end = Math.min(content.length, index + 100);
+      let snippet = content.substring(start, end);
 
-    return (start > 0 ? "..." : "") + snippet + (end < content.length ? "..." : "");
-};
+      const regex = new RegExp(`(${query})`, "gi");
+      snippet = snippet.replace(regex, "**$1**");
 
-// Hardcoded or Env based URL
-const CONFIG_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || process.env.CONVEX_URL || "https://happy-otter-123.convex.cloud";
+      return (
+        (start > 0 ? "..." : "") + snippet + (end < content.length ? "..." : "")
+      );
+    };
 
-const client = new ConvexHttpClient(CONFIG_CONVEX_URL);
+    return {
+      search: (query: SearchQuery) =>
+        Effect.gen(function* () {
+          const processedQuery = processNepaliText(query.q);
+          const searchTerm = processedQuery || query.q;
 
-const make = Effect.succeed({
-    search: (query: SearchQuery) =>
-        Effect.tryPromise({
-            try: async () => {
-                // Enrich query with NLP (Normalization, Stemming, Stopword removal)
-                const processedQuery = processNepaliText(query.q);
-                // If NLP results in empty string (e.g. only stopwords), fallback to original
-                const searchQuery = processedQuery || query.q;
+          const sql = `
+            SELECT id, url, title, content_text, 
+                   ts_rank(to_tsvector('simple', searchable_text), plainto_tsquery('simple', $1)) as rank
+            FROM documents
+            WHERE to_tsvector('simple', searchable_text) @@ plainto_tsquery('simple', $1)
+            ORDER BY rank DESC
+            LIMIT $2 OFFSET $3
+          `;
 
-                // Query the "search" function in convex/documents.ts
-                const results = await client.query(anyApi.documents.search, {
-                    q: searchQuery,
-                    paginationOpts: {
-                        numItems: query.limit,
-                        cursor: query.cursor ?? null
-                    },
-                    language: query.language,
-                });
+          const limit = query.limit;
+          const offset = query.cursor ? parseInt(query.cursor) : 0;
 
-                return new SearchResponse({
-                    results: results.page.map((doc: any) => new SearchResult({
-                        id: doc._id,
-                        title: doc.title,
-                        url: doc.url,
-                        snippet: generateHighlight(doc.contentText, query.q),
-                        score: doc._score || 1.0,
-                    })),
-                    continueCursor: results.continueCursor,
-                    isDone: results.isDone,
-                });
-            },
-            catch: (error) => new Error(`Convex error: ${String(error)}`),
+          const result = yield* db.query(sql, [searchTerm, limit, offset]);
+
+          const results = result.rows.map(
+            (row: any) =>
+              new SearchResult({
+                id: row.id.toString(),
+                title: row.title,
+                url: row.url,
+                snippet: generateHighlight(row.content_text, query.q),
+                score: Number(row.rank),
+              }),
+          );
+
+          const nextCursor =
+            result.rows.length === limit
+              ? (offset + limit).toString()
+              : undefined;
+
+          return new SearchResponse({
+            results,
+            continueCursor: nextCursor ?? "",
+            isDone: results.length < limit,
+          });
         }),
-});
-
-export const SearchServiceLive = Layer.effect(SearchService, make);
+    };
+  }),
+);
